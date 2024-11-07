@@ -1,18 +1,22 @@
-package com.philjay
+package de.chennemann.rrule
 
-import java.time.Instant
-import java.time.LocalDateTime
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.format.char
+import kotlinx.datetime.isoDayNumber
+import kotlinx.datetime.plus
 
-open class RRule() {
+
+open class RRuleLegacy() {
 
     private val name = "RRULE"
 
-    var freq: Frequency = Frequency.Daily
+    var freq: Frequency = Frequency.DAILY
 
     var wkst: Weekday? = null
-    var until: Instant? = null
+    var until: LocalDateTime? = null
     var count = 0
     var interval = 0
 
@@ -31,11 +35,11 @@ open class RRule() {
             if (component == "FREQ") {
                 i += 1
                 freq = when (components[i]) {
-                    "DAILY" -> Frequency.Daily
-                    "WEEKLY" -> Frequency.Weekly
-                    "MONTHLY" -> Frequency.Monthly
-                    "YEARLY" -> Frequency.Yearly
-                    else -> Frequency.Daily
+                    "DAILY" -> Frequency.DAILY
+                    "WEEKLY" -> Frequency.WEEKLY
+                    "MONTHLY" -> Frequency.MONTHLY
+                    "YEARLY" -> Frequency.YEARLY
+                    else -> Frequency.DAILY
                 }
             }
             if (component == "INTERVAL") {
@@ -119,7 +123,7 @@ open class RRule() {
                 count = components[i].toIntOrNull() ?: 1
             } else if (component == "UNTIL") {
                 i += 1
-                until = LocalDateTime.parse(components[i], dateFormatter).toInstant(ZoneOffset.UTC)
+                until = LocalDateTime.parse(components[i], dateFormatter)
             }
 
             if (component == "WKST") {
@@ -142,7 +146,7 @@ open class RRule() {
             buf.append(";INTERVAL=").append(interval)
         }
         if (until != null) {
-            buf.append(";UNTIL=").append(dateFormatter.format(until))
+            buf.append(";UNTIL=").append(dateFormatter.format(until!!))
         }
         if (count > 0) {
             buf.append(";COUNT=").append(count)
@@ -186,6 +190,45 @@ open class RRule() {
         return buf.toString()
     }
 
+    // Generating date sequence
+    fun generateOccurrences(start: LocalDate): Sequence<LocalDate> {
+        var currentCount = 0
+        return generateSequence(start) { current ->
+            if (count != null && currentCount >= count) return@generateSequence null
+            if (until != null && current > until!!.date ) return@generateSequence null
+
+            currentCount++
+            when (freq) {
+                Frequency.DAILY -> current.plusDays(interval.toLong())
+                Frequency.WEEKLY -> {
+                    var nextDate = current.plusWeeks(interval.toLong())
+                    byDay?.let {
+                        nextDate = it.firstOrNull()?.let { day ->
+                            nextDate.nextOrSame(DayOfWeek.valueOf(day.weekday.name))
+                        } ?: nextDate
+                    }
+                    nextDate
+                }
+                Frequency.MONTHLY -> current.plusMonths(interval.toLong())
+                Frequency.YEARLY -> current.plusYears(interval.toLong())
+            }
+        }.filter { date ->
+            (byMonth == null || byMonth.contains(date.monthNumber)) &&
+                    (byMonthDay == null || byMonthDay.contains(date.dayOfMonth)) &&
+                    (byDay == null || byDay.any { it.weekday.name == date.dayOfWeek.name })
+        }
+    }
+
+    private fun LocalDate.nextOrSame(dayOfWeek: DayOfWeek): LocalDate {
+        val currentDay = this.dayOfWeek
+        val daysToAdd = if (currentDay <= dayOfWeek) {
+            dayOfWeek.isoDayNumber - currentDay.isoDayNumber
+        } else {
+            7 - (currentDay.isoDayNumber - dayOfWeek.isoDayNumber)
+        }
+        return this.plusDays(daysToAdd.toLong())
+    }
+
     private fun writeIntList(integers: List<Int>, out: StringBuilder) {
         for (i in integers.indices) {
             if (0 != i) {
@@ -197,18 +240,35 @@ open class RRule() {
 
     private fun weekDayFromString(dayString: String): Weekday? {
         return when {
-            dayString.contains("SU") -> Weekday.Sunday
-            dayString.contains("MO") -> Weekday.Monday
-            dayString.contains("TU") -> Weekday.Tuesday
-            dayString.contains("WE") -> Weekday.Wednesday
-            dayString.contains("TH") -> Weekday.Thursday
-            dayString.contains("FR") -> Weekday.Friday
-            dayString.contains("SA") -> Weekday.Saturday
+            dayString.contains("SU") -> Weekday.SUNDAY
+            dayString.contains("MO") -> Weekday.MONDAY
+            dayString.contains("TU") -> Weekday.TUESDAY
+            dayString.contains("WE") -> Weekday.WEDNESDAY
+            dayString.contains("TH") -> Weekday.THURSDAY
+            dayString.contains("FR") -> Weekday.FRIDAY
+            dayString.contains("SA") -> Weekday.SATURDAY
             else -> null
         }
     }
 
     companion object {
-        private val dateFormatter = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'").withZone(ZoneOffset.UTC)
+        private val dateFormatter = LocalDateTime.Format {
+            year()
+            monthNumber()
+            dayOfMonth()
+            char('T')
+            hour()
+            minute()
+            second()
+            char('Z')
+        }
     }
 }
+
+
+
+
+fun LocalDate.plusDays(days: Long): LocalDate = this.plus(days, DateTimeUnit.DAY)
+fun LocalDate.plusWeeks(weeks: Long): LocalDate = this.plus(weeks, DateTimeUnit.WEEK)
+fun LocalDate.plusMonths(months: Long): LocalDate = this.plus(months, DateTimeUnit.MONTH)
+fun LocalDate.plusYears(years: Long): LocalDate = this.plus(years, DateTimeUnit.YEAR)

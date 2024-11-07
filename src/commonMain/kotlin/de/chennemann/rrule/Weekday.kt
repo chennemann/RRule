@@ -1,26 +1,28 @@
-package com.philjay
+package de.chennemann.rrule
 
 enum class Weekday(val initials: String) {
-    Monday("MO"), Tuesday("TU"), Wednesday("WE"), Thursday("TH"), Friday("FR"), Saturday("SA"), Sunday("SU");
+
+    MONDAY("MO"),
+    TUESDAY("TU"),
+    WEDNESDAY("WE"),
+    THURSDAY("TH"),
+    FRIDAY("FR"),
+    SATURDAY("SA"),
+    SUNDAY("SU");
 
     companion object {
-
-        val values by lazy {
-            values()
-        }
-
         fun fromString(string: String?): Weekday? {
             return if (string.isNullOrEmpty() || string.length < 2) {
                 null
             } else {
                 try {
-                    string.toLowerCase()
-                    string[0].toUpperCase()
+                    string.lowercase()
+                    string[0].uppercase()
                     valueOf(string)
                 } catch (e: Exception) {
                     val dayInitials = string.substring(0, 2)
 
-                    for (value in values) {
+                    for (value in entries) {
                         if (value.initials.equals(dayInitials, true)) {
                             return value
                         }
